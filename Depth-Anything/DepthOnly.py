@@ -12,15 +12,8 @@ from depth_anything.util.transform import Resize, NormalizeImage, PrepareForNet
 
 
 #encoders = ['vits', 'vitb', 'vitl']
+#number of variables increase from vits to vitl
 encoder = 'vits'
-
-
-margin_width = 50
-caption_height = 60
-
-font = cv2.FONT_HERSHEY_SIMPLEX
-font_scale = 1
-font_thickness = 2
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -59,42 +52,34 @@ while cap.isOpened():
     if not ret:
         break
 
-    raw_image = cv2.resize(raw_image, (640, 480))
+    #raw_image = cv2.resize(raw_image, (2560, 1600))
 
+    #converting the raw image to RGB and then normalising the image pixel values for image processing
     image = cv2.cvtColor(raw_image, cv2.COLOR_BGR2RGB) / 255.0
     
+    #getting the height and width of the raw image
     h, w = image.shape[:2]
     
+    #transforming the image 
     image = transform({'image': image})['image']
+    
+    #converts the numpy array to a pytorch tensor(from_numpy), adds a batch dimension for deep learning(unsqueeze),
+    #move tensor to specified device(.to())
     image = torch.from_numpy(image).unsqueeze(0).to(DEVICE)
     
+    #temporarily disable gradient computation
     with torch.no_grad():
+        #running the image through the depth anything algorithm
         depth = depth_anything(image)
     
+    #depth[None] adds batch dimension(like unsqueeze(0)), interpolate resizes the tensor, bilinear is just an algo for resizing
     depth = F.interpolate(depth[None], (h, w), mode='bilinear', align_corners=False)[0, 0]
     depth = (depth - depth.min()) / (depth.max() - depth.min()) * 255.0
     
+    #.cpu() moves tensor to the cpu, .numpy() converts it to a numpy array(only valid for cpu tensors),
+    #.astype(np.uint8) converts numpy array to uint8(common data type for image data)
     depth = depth.cpu().numpy().astype(np.uint8)
     depth_color = cv2.applyColorMap(depth, cv2.COLORMAP_INFERNO)
-    
-    split_region = np.ones((raw_image.shape[0], margin_width, 3), dtype=np.uint8) * 255
-
-#    combined_results = cv2.hconcat([raw_image, split_region, depth_color])
-    
-#    caption_space = np.ones((caption_height, combined_results.shape[1], 3), dtype=np.uint8) * 255
-#    captions = ['Raw image', 'Depth Anything']
-#    segment_width = w + margin_width
-#    for i, caption in enumerate(captions):
-#        # Calculate text size
-#        text_size = cv2.getTextSize(caption, font, font_scale, font_thickness)[0]
-#
-#        # Calculate x-coordinate to center the text
-#        text_x = int((segment_width * i) + (w - text_size[0]) / 2)
-
-#       # Add text caption
-#        cv2.putText(caption_space, caption, (text_x, 40), font, font_scale, (0, 0, 0), font_thickness)
-    
-#    final_result = cv2.vconcat([caption_space, combined_results])
 
     # Write the frame to the video file
     out_video.write(depth_color)
